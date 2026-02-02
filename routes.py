@@ -1,5 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, status, Query, UploadFile, File, Form, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import StreamingResponse
+import httpx
 from typing import List, Optional, Union
 import logging
 import jwt
@@ -169,6 +171,30 @@ async def get_news_detail(news_id: str):
     except Exception as e:
         logger.error(f"Error fetching news: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+    
+
+@router.get("/image-proxy")
+async def image_proxy(url: str = Query(...)):
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(url, follow_redirects=True)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        content_type = response.headers.get("content-type", "image/jpeg")
+
+        return StreamingResponse(
+            response.aiter_bytes(),
+            media_type=content_type,
+            headers={
+                "Cache-Control": "public, max-age=86400"
+            }
+        )
+
+    except Exception:
+        raise HTTPException(status_code=400, detail="Failed to fetch image")
+    
 
 # ========================
 # PARTNERSHIPS ROUTES (v2.0 NEW)
@@ -630,6 +656,7 @@ async def delete_partnership_admin(partnership_id: str, current_username: str = 
 @router.post("/admin/team", response_model=TeamMember)
 async def create_team_member_admin(
     file: UploadFile = File(None),
+    prefix: str = Form(...),
     name: str = Form(...),
     role: str = Form(...),
     bio: str = Form(...),
@@ -659,6 +686,7 @@ async def create_team_member_admin(
         
         # Prepare team member data
         member_data = {
+            "prefix": prefix,
             "name": name,
             "role": role,
             "bio": bio,
@@ -686,6 +714,7 @@ async def update_team_member_admin(
     member_id: str,
     request: Request,
     file: UploadFile = File(None),
+    prefix: str = Form(None),
     name: str = Form(None),
     role: str = Form(None),
     bio: str = Form(None),
@@ -810,6 +839,8 @@ async def update_team_member_admin(
         
         # Update other fields if provided
         logger.info(f"Processing boolean fields - is_leadership: {is_leadership}, is_active: {is_active}")
+        if prefix is not None:
+            update_data['prefix'] = prefix
         if name is not None:
             update_data['name'] = name
         if role is not None:
