@@ -250,6 +250,7 @@ class Partnership(PartnershipBase):
 # ========================
 
 class TeamMemberBase(BaseModel):
+    prefix: Optional[str] = Field(None, max_length=20)
     name: str = Field(..., min_length=1, max_length=200)
     role: str = Field(..., min_length=1, max_length=200)
     bio: str = Field(..., min_length=10, max_length=5000)
@@ -263,10 +264,12 @@ class TeamMemberBase(BaseModel):
     is_active: bool = Field(default=True)  # Add is_active field
     is_leadership: bool = Field(default=False)  # Add is_leadership field
 
+
 class TeamMemberCreate(TeamMemberBase):
     pass
 
 class TeamMemberUpdate(BaseModel):
+    prefix: Optional[str] = Field(None, min_length=1, max_length=20)
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     role: Optional[str] = Field(None, min_length=1, max_length=200)
     bio: Optional[str] = Field(None, min_length=10, max_length=5000)
@@ -279,6 +282,7 @@ class TeamMemberUpdate(BaseModel):
     order: Optional[int] = None
     is_active: Optional[bool] = None  # Add is_active field for updates
     is_leadership: Optional[bool] = None  # Add is_leadership field for updates
+    
 
 class TeamMember(TeamMemberBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))

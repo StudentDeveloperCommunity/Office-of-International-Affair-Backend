@@ -229,7 +229,7 @@ class DatabaseOperations:
         if type:
             query['type'] = type
         if country:
-            query['country'] = country
+            query['country'] = {'$regex': country, '$options': 'i'}
             
         total = await partnerships_collection.count_documents(query)
         skip = (page - 1) * page_size
@@ -283,10 +283,21 @@ class DatabaseOperations:
     @staticmethod
     async def create_team_member(team_data: dict) -> dict:
         """Create a team member"""
+
+        team_data.setdefault('prefix', None)
+        team_data.setdefault('image', None)
+        team_data.setdefault('image_public_id', None)
+        team_data.setdefault('department', None)
+        team_data.setdefault('office', None)
+        team_data.setdefault('responsibilities', [])
+        team_data.setdefault('order', 0)
+        team_data.setdefault('is_active', True)
+        team_data.setdefault('is_leadership', False)
+
         team_data['id'] = str(uuid.uuid4())
         team_data['createdAt'] = datetime.utcnow()
         team_data['updatedAt'] = datetime.utcnow()
-        
+
         result = await team_collection.insert_one(team_data)
         team_data['_id'] = str(result.inserted_id)
         return team_data
@@ -317,19 +328,29 @@ class DatabaseOperations:
         # Filter out None values and empty strings for optional fields only
         # Keep required fields even if empty (they should be validated at the form level)
         filtered_data = {}
+
         for k, v in update_data.items():
-            if k in ['name', 'role', 'bio']:
-                # Keep required fields even if empty
+            if k in ['prefix', 'name', 'role', 'bio']:
                 if v is not None:
                     filtered_data[k] = v
+        
             elif k == 'image':
-                # Image field should allow empty strings for removal
+                # allow empty string to remove image
                 if v is not None:
                     filtered_data[k] = v
+        
+            elif k in ['is_active', 'is_leadership']:
+                # booleans must NEVER be dropped
+                filtered_data[k] = v if isinstance(v, bool) else str(v).lower() == 'true'
+        
+            elif k == 'image_public_id':
+                filtered_data[k] = v
+            
             else:
-                # Filter out None values and empty strings for optional fields
-                if v is not None and (isinstance(v, str) and v.strip() != '' or not isinstance(v, str)):
+                # optional string / other fields
+                if v is not None and (not isinstance(v, str) or v.strip() != ''):
                     filtered_data[k] = v
+
         
         result = await team_collection.update_one(
             {'id': member_id},
