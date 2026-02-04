@@ -10,6 +10,9 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 import aiofiles
+import cloudinary
+import cloudinary.uploader
+
 from models import (
     # v1 Models
     Program, ProgramCreate, ProgramUpdate,
@@ -84,6 +87,17 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 
 # Active admin sessions
 active_admin_sessions = set()
+
+@router.get("/admin/debug/cloudinary")
+async def debug_cloudinary():
+    """DEBUG ONLY - Check Cloudinary configuration"""
+    return {
+        "cloud_name_set": bool(os.getenv('CLOUDINARY_CLOUD_NAME')),
+        "api_key_set": bool(os.getenv('CLOUDINARY_API_KEY')),
+        "api_secret_set": bool(os.getenv('CLOUDINARY_API_SECRET')),
+        "configured_cloud_name": cloudinary.config().cloud_name,
+        "configured_api_key": cloudinary.config().api_key[:4] + "..." if cloudinary.config().api_key else None
+    }
 
 # ========================
 # PUBLIC ROUTES
@@ -561,36 +575,132 @@ async def delete_program_admin(program_id: str, current_username: str = Depends(
 # ========================
 
 @router.post("/admin/news", response_model=News)
-async def create_news_admin(news: NewsCreate, current_username: str = Depends(verify_token)):
-    """Create news article - Admin only"""
+async def create_news_admin(
+    file: UploadFile = File(None),
+    title: str = Form(...),
+    category: str = Form(...),
+    date: str = Form(...),
+    content: str = Form(...),
+    is_featured: bool = Form(False),
+    current_username: str = Depends(verify_token)
+):
+    """Create news article with optional image - Admin only"""
     try:
-        created_news = await DatabaseOperations.create_news(news.dict())
+        # Handle image upload to Cloudinary
+        image = None
+        image_public_id = None
+
+        if file:
+            # Validate file type
+            allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+            if file.content_type not in allowed_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed."
+                )
+
+            # Upload to Cloudinary
+            try:
+                upload_result = cloudinary.uploader.upload(
+                    file.file,
+                    folder="medicaps/news",
+                    resource_type="auto"
+                )
+                image = upload_result["secure_url"]
+                image_public_id = upload_result["public_id"]
+                logger.info(f"Image uploaded to Cloudinary: {image_public_id}")
+            except Exception as upload_error:
+                logger.error(f"Cloudinary upload failed: {str(upload_error)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Image upload failed: {str(upload_error)}"
+                )
+
+        # Prepare news data
+        news_data = {
+            "title": title,
+            "category": category,
+            "date": date,
+            "content": content,
+            "featured": is_featured,
+            "image": image,
+            "image_public_id": image_public_id,
+            "createdAt": datetime.utcnow()
+        }
+
+        created_news = await DatabaseOperations.create_news(news_data)
         return created_news
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating news: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create news")
+        raise HTTPException(status_code=500, detail=f"Failed to create news: {str(e)}")
 
 @router.put("/admin/news/{news_id}", response_model=News)
-async def update_news_admin(news_id: str, news: NewsUpdate, current_username: str = Depends(verify_token)):
+async def update_news_admin(
+    news_id: str,
+    file: UploadFile = File(None),
+    title: str = Form(None),
+    category: str = Form(None),
+    date: str = Form(None),
+    content: str = Form(None),
+    is_featured: bool = Form(None),
+    current_username: str = Depends(verify_token)
+):
     """Update news article - Admin only"""
     try:
-        update_data = {}
-        news_dict = news.dict()
-        
-        # Only include fields that are not None and not empty strings
-        for k, v in news_dict.items():
-            if v is not None and (isinstance(v, str) and v.strip() != '' or not isinstance(v, str)):
-                update_data[k] = v
-        
-        updated_news = await DatabaseOperations.update_news(news_id, update_data)
-        if not updated_news:
+        existing = await DatabaseOperations.get_news_by_id(news_id)
+        if not existing:
             raise HTTPException(status_code=404, detail="News not found")
+
+        update_data = {}
+
+        # Handle image upload to Cloudinary
+        if file is not None:
+            allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+            if file.content_type not in allowed_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed."
+                )
+
+            # Delete old image from Cloudinary if exists
+            if existing.get('image_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['image_public_id'])
+                    logger.info(f"Deleted old image from Cloudinary: {existing['image_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old image: {str(e)}")
+
+            # Upload new image to Cloudinary
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/news",
+                resource_type="auto"
+            )
+
+            update_data['image'] = upload_result["secure_url"]
+            update_data['image_public_id'] = upload_result["public_id"]
+
+        # Update other fields if provided
+        if title is not None:
+            update_data['title'] = title
+        if category is not None:
+            update_data['category'] = category
+        if date is not None:
+            update_data['date'] = date
+        if content is not None:
+            update_data['content'] = content
+        if is_featured is not None:
+            update_data['featured'] = is_featured
+
+        updated_news = await DatabaseOperations.update_news(news_id, update_data)
         return updated_news
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating news: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update news")
+        raise HTTPException(status_code=500, detail=f"Failed to update news: {str(e)}")
 
 @router.delete("/admin/news/{news_id}")
 async def delete_news_admin(news_id: str, current_username: str = Depends(verify_token)):
@@ -611,29 +721,129 @@ async def delete_news_admin(news_id: str, current_username: str = Depends(verify
 # ========================
 
 @router.post("/admin/partnerships", response_model=Partnership)
-async def create_partnership_admin(partnership: PartnershipCreate, current_username: str = Depends(verify_token)):
-    """Create partnership - Admin only"""
+async def create_partnership_admin(
+    file: UploadFile = File(None),
+    partner_name: str = Form(...),
+    type: str = Form(...),
+    country: str = Form(...),
+    description: str = Form(...),
+    details: str = Form(...),
+    website: str = Form(None),
+    current_username: str = Depends(verify_token)
+):
+    """Create partnership with optional logo - Admin only"""
     try:
-        created_partnership = await DatabaseOperations.create_partnership(partnership.dict())
+        # Handle logo upload to Cloudinary
+        logo = None
+        logo_public_id = None
+
+        if file:
+            allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]
+            if file.content_type not in allowed_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid file type. Only JPEG, PNG, GIF, WebP, and SVG are allowed."
+                )
+
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/partnerships",
+                resource_type="auto"
+            )
+
+            logo = upload_result["secure_url"]
+            logo_public_id = upload_result["public_id"]
+
+        # Prepare partnership data
+        partnership_data = {
+            "partnerName": partner_name,
+            "type": type,
+            "country": country,
+            "description": description,
+            "details": details,
+            "website": website,
+            "logo": logo,
+            "logo_public_id": logo_public_id,
+            "status": "Active",
+            "createdAt": datetime.utcnow()
+        }
+
+        created_partnership = await DatabaseOperations.create_partnership(partnership_data)
         return created_partnership
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating partnership: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create partnership")
+        raise HTTPException(status_code=500, detail=f"Failed to create partnership: {str(e)}")
 
 @router.put("/admin/partnerships/{partnership_id}", response_model=Partnership)
-async def update_partnership_admin(partnership_id: str, partnership: PartnershipUpdate, current_username: str = Depends(verify_token)):
+async def update_partnership_admin(
+    partnership_id: str,
+    file: UploadFile = File(None),
+    partner_name: str = Form(None),
+    type: str = Form(None),
+    country: str = Form(None),
+    description: str = Form(None),
+    details: str = Form(None),
+    website: str = Form(None),
+    current_username: str = Depends(verify_token)
+):
     """Update partnership - Admin only"""
     try:
-        update_data = {k: v for k, v in partnership.dict().items() if v is not None}
-        updated_partnership = await DatabaseOperations.update_partnership(partnership_id, update_data)
-        if not updated_partnership:
+        existing = await DatabaseOperations.get_partnership_by_id(partnership_id)
+        if not existing:
             raise HTTPException(status_code=404, detail="Partnership not found")
+
+        update_data = {}
+
+        # Handle logo upload to Cloudinary
+        if file is not None:
+            allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]
+            if file.content_type not in allowed_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid file type. Only JPEG, PNG, GIF, WebP, and SVG are allowed."
+                )
+
+            # Delete old logo from Cloudinary if exists
+            if existing.get('logo_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['logo_public_id'])
+                    logger.info(f"Deleted old logo: {existing['logo_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old logo: {str(e)}")
+
+            # Upload new logo
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/partnerships",
+                resource_type="auto"
+            )
+
+            update_data['logo'] = upload_result["secure_url"]
+            update_data['logo_public_id'] = upload_result["public_id"]
+
+        # Update other fields
+        if partner_name is not None:
+            update_data['partnerName'] = partner_name
+        if type is not None:
+            update_data['type'] = type
+        if country is not None:
+            update_data['country'] = country
+        if description is not None:
+            update_data['description'] = description
+        if details is not None:
+            update_data['details'] = details
+        if website is not None:
+            update_data['website'] = website
+
+        updated_partnership = await DatabaseOperations.update_partnership(partnership_id, update_data)
         return updated_partnership
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating partnership: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update partnership")
+        raise HTTPException(status_code=500, detail=f"Failed to update partnership: {str(e)}")
 
 @router.delete("/admin/partnerships/{partnership_id}")
 async def delete_partnership_admin(partnership_id: str, current_username: str = Depends(verify_token)):
@@ -663,7 +873,6 @@ async def create_team_member_admin(
     email: str = Form(""),
     phone: str = Form(""),
     department: str = Form(""),
-    image_url: str = Form(None),
     order: int = Form(0),
     is_leadership: bool = Form(False),
     is_active: bool = Form(True),
@@ -671,19 +880,26 @@ async def create_team_member_admin(
 ):
     """Create team member with optional file upload - Admin only"""
     try:
-        # Handle image upload
-        image_path = None
+        # Handle image upload to Cloudinary
+        image = None
+        image_public_id = None
+
         if file:
             # Validate file type
             allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
             if file.content_type not in allowed_types:
-                raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.")
-            
-            # Save the uploaded file
-            image_path = save_team_upload_file(file)
-        elif image_url:
-            image_path = image_url
-        
+                raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and    WebP are allowed.")
+
+            # Upload to Cloudinary
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/team",
+                resource_type="auto"
+            )
+
+            image = upload_result["secure_url"]
+            image_public_id = upload_result["public_id"]
+
         # Prepare team member data
         member_data = {
             "prefix": prefix,
@@ -693,13 +909,14 @@ async def create_team_member_admin(
             "email": email,
             "phone": phone,
             "department": department,
-            "image": f"/{image_path}" if image_path else None,
+            "image": image,  # Consistent with gallery
+            "image_public_id": image_public_id,
             "order": order,
             "is_leadership": is_leadership,
             "is_active": is_active,
             "uploadDate": datetime.utcnow()
         }
-        
+
         # Save to database
         created_member = await DatabaseOperations.create_team_member(member_data)
         return created_member
@@ -712,7 +929,6 @@ async def create_team_member_admin(
 @router.put("/admin/team/{member_id}", response_model=TeamMember)
 async def update_team_member_admin(
     member_id: str,
-    request: Request,
     file: UploadFile = File(None),
     prefix: str = Form(None),
     name: str = Form(None),
@@ -721,7 +937,6 @@ async def update_team_member_admin(
     email: str = Form(None),
     phone: str = Form(None),
     department: str = Form(None),
-    image_url: Optional[str] = Form(None),
     order: int = Form(None),
     is_leadership: bool = Form(None),
     is_active: bool = Form(None),
@@ -729,116 +944,44 @@ async def update_team_member_admin(
 ):
     """Update team member - Admin only"""
     try:
-        logger.info(f"=== TEAM MEMBER UPDATE DEBUG ===")
+        logger.info(f"=== TEAM MEMBER UPDATE ===")
         logger.info(f"Member ID: {member_id}")
-        logger.info(f"Received image_url parameter: '{image_url}' (type: {type(image_url)})")
-        logger.info(f"image_url is None: {image_url is None}")
-        logger.info(f"image_url length: {len(image_url) if image_url else 'N/A'}")
         
-        # Debug all received parameters
-        logger.info(f"All received parameters:")
-        logger.info(f"  name: {name} (type: {type(name)})")
-        logger.info(f"  role: {role} (type: {type(role)})")
-        logger.info(f"  bio: {bio} (type: {type(bio)})")
-        logger.info(f"  email: {email} (type: {type(email)})")
-        logger.info(f"  phone: {phone} (type: {type(phone)})")
-        logger.info(f"  department: {department} (type: {type(department)})")
-        logger.info(f"  order: {order} (type: {type(order)})")
-        logger.info(f"  is_leadership: {is_leadership} (type: {type(is_leadership)})")
-        logger.info(f"  is_active: {is_active} (type: {type(is_active)})")
-        
+        # Get existing member
         existing = await DatabaseOperations.get_team_member_by_id(member_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Team member not found")
 
-        # Handle image upload or URL
         update_data = {}
-        
-        if file:
-            logger.info("Processing uploaded file...")
+
+        # Handle image upload to Cloudinary
+        if file is not None:
+            logger.info("Processing new file upload...")
             # Validate file type
-            if not file.content_type.startswith('image/'):
+            allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+            if file.content_type not in allowed_types:
                 raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.")
             
-            # Save the uploaded file
-            image_path = save_team_upload_file(file)
-            update_data['image'] = f"/{image_path}"
-            logger.info(f"Image file uploaded: {image_path}")
-        elif image_url is not None:
-            # Handle image URL (including empty string for removal)
-            logger.info(f"Processing image_url: '{image_url}' (length: {len(image_url)})")
-            if image_url.strip() != '':
-                update_data['image'] = f"/{image_url}"
-                logger.info(f"Image URL updated: {image_url}")
-            else:
-                # Empty string means remove the image
-                # First, get the current member to find the existing image file
-                current_member = await DatabaseOperations.get_team_member_by_id(member_id)
-                if current_member and current_member.get('image'):
-                    old_image_path = current_member['image']
-                    # Remove leading slash if present
-                    if old_image_path.startswith('/'):
-                        old_image_path = old_image_path[1:]
-                    
-                    # Construct full file path
-                    full_file_path = old_image_path
-                    
-                    # Delete the actual image file
-                    try:
-                        if os.path.exists(full_file_path):
-                            os.remove(full_file_path)
-                            logger.info(f"Deleted image file: {full_file_path}")
-                        else:
-                            logger.info(f"Image file not found for deletion: {full_file_path}")
-                    except Exception as e:
-                        logger.error(f"Error deleting image file {full_file_path}: {str(e)}")
-                
-                # Set image field to empty string in database
-                update_data['image'] = ''
-                logger.info("Image removal requested - setting image to empty string")
-        else:
-            logger.info("No image changes requested - image_url is None")
-        
-        # Check raw form data for image_url parameter
-        try:
-            form_data = await request.form()
-            if 'image_url' in form_data:
-                raw_image_url = form_data['image_url']
-                logger.info(f"Raw form data image_url: '{raw_image_url}' (type: {type(raw_image_url)})")
-                if raw_image_url == '' or raw_image_url == b'':
-                    logger.info("Detected empty image_url in raw form data - processing removal")
-                    # Empty string means remove the image
-                    current_member = await DatabaseOperations.get_team_member_by_id(member_id)
-                    if current_member and current_member.get('image'):
-                        old_image_path = current_member['image']
-                        # Remove leading slash if present
-                        if old_image_path.startswith('/'):
-                            old_image_path = old_image_path[1:]
-                        
-                        # Construct full file path
-                        full_file_path = old_image_path
-                        
-                        # Delete the actual image file
-                        try:
-                            if os.path.exists(full_file_path):
-                                os.remove(full_file_path)
-                                logger.info(f"Deleted image file: {full_file_path}")
-                            else:
-                                logger.info(f"Image file not found for deletion: {full_file_path}")
-                        except Exception as e:
-                            logger.error(f"Error deleting image file {full_file_path}: {str(e)}")
-                    
-                    # Set image field to empty string in database
-                    update_data['image'] = ''
-                    logger.info("Image removal processed from raw form data")
-        except Exception as e:
-            logger.error(f"Error reading raw form data: {str(e)}")
-        
-        logger.info(f"Final update_data image field: {update_data.get('image', 'NOT_SET')}")
-        logger.info(f"=== END TEAM MEMBER UPDATE DEBUG ===")
-        
+            # Delete old image from Cloudinary if exists
+            if existing.get('image_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['image_public_id'])
+                    logger.info(f"Deleted old image from Cloudinary: {existing['image_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old image from Cloudinary: {str(e)}")
+            
+            # Upload new image to Cloudinary
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/team",
+                resource_type="auto"
+            )
+            
+            update_data['image'] = upload_result["secure_url"]
+            update_data['image_public_id'] = upload_result["public_id"]
+            logger.info(f"New image uploaded to Cloudinary: {upload_result['public_id']}")
+
         # Update other fields if provided
-        logger.info(f"Processing boolean fields - is_leadership: {is_leadership}, is_active: {is_active}")
         if prefix is not None:
             update_data['prefix'] = prefix
         if name is not None:
@@ -864,7 +1007,9 @@ async def update_team_member_admin(
         
         logger.info(f"Final update_data: {update_data}")
 
+        # Update in database
         updated = await DatabaseOperations.update_team_member(member_id, update_data)
+        logger.info(f"=== TEAM MEMBER UPDATE COMPLETE ===")
         return updated
     except HTTPException:
         raise
@@ -876,9 +1021,24 @@ async def update_team_member_admin(
 async def delete_team_member_admin(member_id: str, current_username: str = Depends(verify_token)):
     """Delete team member - Admin only"""
     try:
+        # Get member details before deletion
+        member = await DatabaseOperations.get_team_member_by_id(member_id)
+        if not member:
+            raise HTTPException(status_code=404, detail="Team member not found")
+        
+        # Delete from Cloudinary if image_public_id exists
+        if member.get('image_public_id'):
+            try:
+                cloudinary.uploader.destroy(member['image_public_id'])
+                logger.info(f"Deleted image from Cloudinary: {member['image_public_id']}")
+            except Exception as e:
+                logger.warning(f"Failed to delete image from Cloudinary: {str(e)}")
+        
+        # Delete from database
         deleted = await DatabaseOperations.delete_team_member(member_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Team member not found")
+        
         return SuccessResponse(message="Team member deleted successfully")
     except HTTPException:
         raise
@@ -891,36 +1051,133 @@ async def delete_team_member_admin(member_id: str, current_username: str = Depen
 # ========================
 
 @router.post("/admin/events", response_model=Event)
-async def create_event_admin(event: EventCreate, current_username: str = Depends(verify_token)):
-    """Create event - Admin only"""
+async def create_event_admin(
+    file: UploadFile = File(None),
+    title: str = Form(...),
+    type: str = Form(...),
+    description: str = Form(...),
+    start_date: str = Form(...),
+    end_date: str = Form(...),
+    location: str = Form(None),
+    registration_url: str = Form(None),
+    current_username: str = Depends(verify_token)
+):
+    """Create event with optional image - Admin only"""
     try:
-        created_event = await DatabaseOperations.create_event(event.dict())
+        # Handle image upload to Cloudinary
+        image = None
+        image_public_id = None
+
+        if file:
+            allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+            if file.content_type not in allowed_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed."
+                )
+
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/events",
+                resource_type="auto"
+            )
+
+            image = upload_result["secure_url"]
+            image_public_id = upload_result["public_id"]
+
+        # Prepare event data
+        event_data = {
+            "title": title,
+            "type": type,
+            "description": description,
+            "startDate": start_date,
+            "endDate": end_date,
+            "venue": location,
+            "registrationLink": registration_url,
+            "image": image,
+            "image_public_id": image_public_id,
+            "createdAt": datetime.utcnow()
+        }
+
+        created_event = await DatabaseOperations.create_event(event_data)
         return created_event
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating event: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to create event")
+        raise HTTPException(status_code=500, detail=f"Failed to create event: {str(e)}")
 
 @router.put("/admin/events/{event_id}", response_model=Event)
-async def update_event_admin(event_id: str, event: EventUpdate, current_username: str = Depends(verify_token)):
+async def update_event_admin(
+    event_id: str,
+    file: UploadFile = File(None),
+    title: str = Form(None),
+    type: str = Form(None),
+    description: str = Form(None),
+    start_date: str = Form(None),
+    end_date: str = Form(None),
+    location: str = Form(None),
+    registration_url: str = Form(None),
+    current_username: str = Depends(verify_token)
+):
     """Update event - Admin only"""
     try:
-        update_data = {}
-        event_dict = event.dict()
-        
-        # Only include fields that are not None and not empty strings
-        for k, v in event_dict.items():
-            if v is not None and (isinstance(v, str) and v.strip() != '' or not isinstance(v, str)):
-                update_data[k] = v
-        
-        updated_event = await DatabaseOperations.update_event(event_id, update_data)
-        if not updated_event:
+        existing = await DatabaseOperations.get_event_by_id(event_id)
+        if not existing:
             raise HTTPException(status_code=404, detail="Event not found")
+
+        update_data = {}
+
+        # Handle image upload to Cloudinary
+        if file is not None:
+            allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
+            if file.content_type not in allowed_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed."
+                )
+
+            # Delete old image from Cloudinary if exists
+            if existing.get('image_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['image_public_id'])
+                    logger.info(f"Deleted old image: {existing['image_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old image: {str(e)}")
+
+            # Upload new image
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/events",
+                resource_type="auto"
+            )
+
+            update_data['image'] = upload_result["secure_url"]
+            update_data['image_public_id'] = upload_result["public_id"]
+
+        # Update other fields
+        if title is not None:
+            update_data['title'] = title
+        if type is not None:
+            update_data['type'] = type
+        if description is not None:
+            update_data['description'] = description
+        if start_date is not None:
+            update_data['startDate'] = start_date
+        if end_date is not None:
+            update_data['endDate'] = end_date
+        if location is not None:
+            update_data['venue'] = location
+        if registration_url is not None:
+            update_data['registrationLink'] = registration_url
+
+        updated_event = await DatabaseOperations.update_event(event_id, update_data)
         return updated_event
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error updating event: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to update event")
+        raise HTTPException(status_code=500, detail=f"Failed to update event: {str(e)}")
 
 @router.delete("/admin/events/{event_id}")
 async def delete_event_admin(event_id: str, current_username: str = Depends(verify_token)):
@@ -935,41 +1192,10 @@ async def delete_event_admin(event_id: str, current_username: str = Depends(veri
     except Exception as e:
         logger.error(f"Error deleting event: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete event")
+
+# ===============================
 # ADMIN GALLERY ROUTES (v2.0 NEW)
-# ========================
-
-# Create uploads directory if it doesn't exist
-from pathlib import Path
-import uuid
-import shutil
-
-UPLOAD_DIR = Path("uploads/gallery")
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-# Create team uploads directory
-TEAM_UPLOAD_DIR = Path("uploads/team")
-TEAM_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-
-def save_upload_file(file: UploadFile, destination: Path) -> str:
-    """Save uploaded file to the specified directory"""
-    try:
-        # Generate a unique filename
-        file_ext = Path(file.filename).suffix
-        file_name = f"{uuid.uuid4()}{file_ext}"
-        file_path = destination / file_name
-        
-        # Save the file
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-            
-        return str(file_path.relative_to("uploads"))
-    except Exception as e:
-        logger.error(f"Error saving file: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to save file")
-
-def save_team_upload_file(file: UploadFile) -> str:
-    """Save uploaded team member profile picture"""
-    return save_upload_file(file, TEAM_UPLOAD_DIR)
+# ===============================
 
 @router.post("/admin/gallery", response_model=GalleryImage)
 async def upload_gallery_image_admin(
@@ -988,15 +1214,55 @@ async def upload_gallery_image_admin(
         allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
         if file.content_type not in allowed_types:
             raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.")
-        
-        # Save the uploaded file
-        file_path = save_upload_file(file, UPLOAD_DIR)
-        
+
+        # CHECK CLOUDINARY CONFIG BEFORE UPLOAD
+        if not cloudinary.config().cloud_name:
+            logger.error("Cloudinary not configured!")
+            raise HTTPException(
+                status_code=500, 
+                detail="Cloudinary not configured. Please set CLOUDINARY_URL in environment variables."
+            )
+
+        # Upload to Cloudinary with detailed error handling
+        try:
+            logger.info(f"Attempting to upload to Cloudinary: {file.filename}")
+            
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/gallery",
+                resource_type="auto"
+            )
+            
+            logger.info(f"Upload successful: {upload_result.get('public_id')}")
+            
+        except Exception as cloudinary_error:
+            logger.error(f"Cloudinary upload failed: {str(cloudinary_error)}")
+            logger.error(f"Error type: {type(cloudinary_error).__name__}")
+            
+            # More specific error message
+            error_msg = str(cloudinary_error)
+            if "Invalid API Key" in error_msg or "Must supply api_key" in error_msg:
+                raise HTTPException(
+                    status_code=500, 
+                    detail="Cloudinary API credentials invalid. Check CLOUDINARY_URL or API keys."
+                )
+            elif "cloud_name" in error_msg.lower():
+                raise HTTPException(
+                    status_code=500, 
+                    detail="Cloudinary cloud_name not configured. Check CLOUDINARY_CLOUD_NAME."
+                )
+            else:
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Cloudinary upload failed: {error_msg}"
+                )
+
         # Prepare image data for database
         image_data = {
             "title": title,
             "description": description,
-            "image": f"/{file_path}",
+            "image": upload_result["secure_url"],
+            "image_public_id": upload_result["public_id"],
             "alt": title,
             "category": category,
             "order": order,
@@ -1004,7 +1270,7 @@ async def upload_gallery_image_admin(
             "is_active": is_active,
             "uploadDate": datetime.utcnow()
         }
-        
+
         # Save to database
         result = await DatabaseOperations.create_gallery_image(image_data)
         return result
@@ -1013,15 +1279,31 @@ async def upload_gallery_image_admin(
         raise
     except Exception as e:
         logger.error(f"Error uploading image: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to upload image")
+        logger.error(f"Error type: {type(e).__name__}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload image: {str(e)}")
 
 @router.delete("/admin/gallery/{image_id}")
 async def delete_gallery_image_admin(image_id: str, current_username: str = Depends(verify_token)):
     """Delete gallery image - Admin only"""
     try:
+        # Get image details before deletion
+        image = await DatabaseOperations.get_gallery_image_by_id(image_id)
+        if not image:
+            raise HTTPException(status_code=404, detail="Image not found")
+        
+        # Delete from Cloudinary if image_public_id exists
+        if image.get('image_public_id'):
+            try:
+                cloudinary.uploader.destroy(image['image_public_id'])
+                logger.info(f"Deleted image from Cloudinary: {image['image_public_id']}")
+            except Exception as e:
+                logger.warning(f"Failed to delete image from Cloudinary: {str(e)}")
+        
+        # Delete from database
         deleted = await DatabaseOperations.delete_gallery_image(image_id)
         if not deleted:
             raise HTTPException(status_code=404, detail="Image not found")
+        
         return SuccessResponse(message="Image deleted successfully")
     except HTTPException:
         raise
@@ -1029,12 +1311,10 @@ async def delete_gallery_image_admin(image_id: str, current_username: str = Depe
         logger.error(f"Error deleting image: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete image")
 
-
 @router.put("/admin/gallery/{image_id}", response_model=GalleryImage)
 async def update_gallery_image_admin(
     image_id: str,
     file: UploadFile = File(None),
-    image_url: str = Form(None),
     title: str = Form(None),
     description: str = Form(None),
     category: str = Form(None),
@@ -1052,15 +1332,30 @@ async def update_gallery_image_admin(
         update_data = {}
 
         # If a new file is provided, save it and overwrite the image path
+        # If a new file is provided, upload to Cloudinary
         if file is not None:
             allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
             if file.content_type not in allowed_types:
-                raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.")
-            file_path = save_upload_file(file, UPLOAD_DIR)
-            update_data['image'] = f"/{file_path}"
+                raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP       are allowed.")
+
+            # Delete old image from Cloudinary if exists
+            if existing.get('image_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['image_public_id'])
+                    logger.info(f"Deleted old image from Cloudinary: {existing['image_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete old image: {str(e)}")
+
+            # Upload new image to Cloudinary
+            upload_result = cloudinary.uploader.upload(
+                file.file,
+                folder="medicaps/gallery",
+                resource_type="auto"
+            )
+
+            update_data['image'] = upload_result["secure_url"]
+            update_data['image_public_id'] = upload_result["public_id"]
             update_data['alt'] = title or existing.get('alt') or existing.get('title')
-        elif image_url:
-            update_data['image'] = image_url
 
         if title is not None:
             update_data['title'] = title
