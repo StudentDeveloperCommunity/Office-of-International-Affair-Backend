@@ -1,5 +1,4 @@
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -7,6 +6,7 @@ from contextlib import asynccontextmanager
 import os
 import logging
 from pathlib import Path
+
 # Import routes and database utilities.
 # Prefer package-style imports (when running from repo root) but fall back to local imports
 # so the server can be started from the `backend/` directory during local development.
@@ -31,6 +31,18 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Cloudinary configuration
+import cloudinary
+
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
+    api_key=os.getenv("CLOUDINARY_API_KEY"),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET"),
+    secure=True
+)
+logger.info(f"Cloudinary ready: {cloudinary.config().cloud_name}")
+
 
 # MongoDB setup
 mongo_url = os.getenv("MONGO_URL")
@@ -84,12 +96,6 @@ app.add_middleware(
 
 # Include routes
 app.include_router(api_router)
-
-# Serve uploaded files (gallery, team, etc.)
-# Existing gallery items are stored with paths like `/gallery/<filename>`
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-app.mount("/gallery", StaticFiles(directory="uploads/gallery"), name="gallery")
-app.mount("/team", StaticFiles(directory="uploads/team"), name="team")
 
 # Root endpoint
 @app.get("/api/")
