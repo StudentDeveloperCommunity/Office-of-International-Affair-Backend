@@ -645,6 +645,7 @@ async def update_news_admin(
     date: str = Form(None),
     content: str = Form(None),
     is_featured: bool = Form(None),
+    remove_image: str = Form(None),  # ← ADD THIS: flag to remove image
     current_username: str = Depends(verify_token)
 ):
     """Update news article - Admin only"""
@@ -655,8 +656,22 @@ async def update_news_admin(
 
         update_data = {}
 
-        # Handle image upload to Cloudinary
-        if file is not None:
+        # Handle image removal FIRST (if requested)
+        if remove_image == "true":
+            # Delete old image from Cloudinary if exists
+            if existing.get('image_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['image_public_id'])
+                    logger.info(f"Deleted image from Cloudinary: {existing['image_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete image from Cloudinary: {str(e)}")
+            
+            # Set image fields to None
+            update_data['image'] = None
+            update_data['image_public_id'] = None
+
+        # Handle NEW image upload (if provided)
+        elif file is not None:
             allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
             if file.content_type not in allowed_types:
                 raise HTTPException(
@@ -786,6 +801,7 @@ async def update_partnership_admin(
     description: str = Form(None),
     details: str = Form(None),
     website: str = Form(None),
+    remove_logo: str = Form(None),  # ← ADD THIS: flag to remove logo
     current_username: str = Depends(verify_token)
 ):
     """Update partnership - Admin only"""
@@ -796,8 +812,22 @@ async def update_partnership_admin(
 
         update_data = {}
 
-        # Handle logo upload to Cloudinary
-        if file is not None:
+        # Handle logo removal FIRST (if requested)
+        if remove_logo == "true":
+            # Delete old logo from Cloudinary if exists
+            if existing.get('logo_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['logo_public_id'])
+                    logger.info(f"Deleted logo from Cloudinary: {existing['logo_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete logo from Cloudinary: {str(e)}")
+            
+            # Set logo fields to None
+            update_data['logo'] = None
+            update_data['logo_public_id'] = None
+
+        # Handle NEW logo upload (if provided)
+        elif file is not None:
             allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"]
             if file.content_type not in allowed_types:
                 raise HTTPException(
@@ -940,12 +970,14 @@ async def update_team_member_admin(
     order: int = Form(None),
     is_leadership: bool = Form(None),
     is_active: bool = Form(None),
+    remove_image: str = Form(None),  # ← ADD THIS: flag to remove image
     current_username: str = Depends(verify_token)
 ):
     """Update team member - Admin only"""
     try:
         logger.info(f"=== TEAM MEMBER UPDATE ===")
         logger.info(f"Member ID: {member_id}")
+        logger.info(f"Remove image flag: {remove_image}")
         
         # Get existing member
         existing = await DatabaseOperations.get_team_member_by_id(member_id)
@@ -954,13 +986,32 @@ async def update_team_member_admin(
 
         update_data = {}
 
-        # Handle image upload to Cloudinary
-        if file is not None:
+        # Handle image removal FIRST (if requested)
+        if remove_image == "true":
+            logger.info("Processing image removal request...")
+            # Delete old image from Cloudinary if exists
+            if existing.get('image_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['image_public_id'])
+                    logger.info(f"Deleted image from Cloudinary: {existing['image_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete image from Cloudinary: {str(e)}")
+            
+            # Set image fields to None to remove from database
+            update_data['image'] = None
+            update_data['image_public_id'] = None
+            logger.info("Image fields set to None for removal")
+
+        # Handle NEW image upload (if provided)
+        elif file is not None:
             logger.info("Processing new file upload...")
             # Validate file type
             allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
             if file.content_type not in allowed_types:
-                raise HTTPException(status_code=400, detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed.")
+                raise HTTPException(
+                    status_code=400, 
+                    detail="Invalid file type. Only JPEG, PNG, GIF, and WebP are allowed."
+                )
             
             # Delete old image from Cloudinary if exists
             if existing.get('image_public_id'):
@@ -1118,6 +1169,7 @@ async def update_event_admin(
     end_date: str = Form(None),
     location: str = Form(None),
     registration_url: str = Form(None),
+    remove_image: str = Form(None),  # ← ADD THIS: flag to remove image
     current_username: str = Depends(verify_token)
 ):
     """Update event - Admin only"""
@@ -1128,8 +1180,22 @@ async def update_event_admin(
 
         update_data = {}
 
-        # Handle image upload to Cloudinary
-        if file is not None:
+        # Handle image removal FIRST (if requested)
+        if remove_image == "true":
+            # Delete old image from Cloudinary if exists
+            if existing.get('image_public_id'):
+                try:
+                    cloudinary.uploader.destroy(existing['image_public_id'])
+                    logger.info(f"Deleted image from Cloudinary: {existing['image_public_id']}")
+                except Exception as e:
+                    logger.warning(f"Failed to delete image from Cloudinary: {str(e)}")
+            
+            # Set image fields to None
+            update_data['image'] = None
+            update_data['image_public_id'] = None
+
+        # Handle NEW image upload (if provided)
+        elif file is not None:
             allowed_types = ["image/jpeg", "image/png", "image/gif", "image/webp"]
             if file.content_type not in allowed_types:
                 raise HTTPException(

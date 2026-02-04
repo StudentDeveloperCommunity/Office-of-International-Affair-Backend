@@ -190,13 +190,23 @@ class DatabaseOperations:
     async def update_news(news_id: str, update_data: dict) -> dict:
         """Update a news article"""
         update_data['updatedAt'] = datetime.utcnow()
-        update_data = {k: v for k, v in update_data.items() if v is not None}
-        
+
+        # CRITICAL FIX: Don't filter out None values for image fields
+        # We need to explicitly set them to None to remove images
+        filtered_data = {}
+        for k, v in update_data.items():
+            # Always include image and image_public_id, even if None
+            if k in ['image', 'image_public_id']:
+                filtered_data[k] = v
+            # Filter other fields
+            elif v is not None:
+                filtered_data[k] = v
+
         result = await news_collection.update_one(
             {'id': news_id},
-            {'$set': update_data}
+            {'$set': filtered_data}
         )
-        
+
         if result.modified_count:
             return await DatabaseOperations.get_news_by_id(news_id)
         return None
@@ -259,13 +269,22 @@ class DatabaseOperations:
     async def update_partnership(partnership_id: str, update_data: dict) -> dict:
         """Update a partnership"""
         update_data['updatedAt'] = datetime.utcnow()
-        update_data = {k: v for k, v in update_data.items() if v is not None}
-        
+
+        # CRITICAL FIX: Don't filter out None values for logo fields
+        filtered_data = {}
+        for k, v in update_data.items():
+            # Always include logo and logo_public_id, even if None
+            if k in ['logo', 'logo_public_id']:
+                filtered_data[k] = v
+            # Filter other fields
+            elif v is not None:
+                filtered_data[k] = v
+
         result = await partnerships_collection.update_one(
             {'id': partnership_id},
-            {'$set': update_data}
+            {'$set': filtered_data}
         )
-        
+
         if result.modified_count:
             return await DatabaseOperations.get_partnership_by_id(partnership_id)
         return None
@@ -325,32 +344,27 @@ class DatabaseOperations:
         """Update a team member"""
         update_data['updatedAt'] = datetime.utcnow()
         
-        # Filter out None values and empty strings for optional fields only
-        # Keep required fields even if empty (they should be validated at the form level)
+        # CRITICAL FIX: Handle image removal properly
         filtered_data = {}
-
+        
         for k, v in update_data.items():
-            if k in ['prefix', 'name', 'role', 'bio']:
-                if v is not None:
-                    filtered_data[k] = v
-        
-            elif k == 'image':
-                # allow empty string to remove image
-                if v is not None:
-                    filtered_data[k] = v
-        
-            elif k in ['is_active', 'is_leadership']:
-                # booleans must NEVER be dropped
-                filtered_data[k] = v if isinstance(v, bool) else str(v).lower() == 'true'
-        
-            elif k == 'image_public_id':
+            # Always include image and image_public_id, even if None (for removal)
+            if k in ['image', 'image_public_id']:
                 filtered_data[k] = v
             
+            # Handle required fields - always include
+            elif k in ['prefix', 'name', 'role', 'bio']:
+                if v is not None:
+                    filtered_data[k] = v
+        
+            # Handle booleans - NEVER filter these out
+            elif k in ['is_active', 'is_leadership']:
+                filtered_data[k] = v if isinstance(v, bool) else str(v).lower() == 'true'
+            
+            # Handle other optional fields
             else:
-                # optional string / other fields
                 if v is not None and (not isinstance(v, str) or v.strip() != ''):
                     filtered_data[k] = v
-
         
         result = await team_collection.update_one(
             {'id': member_id},
@@ -419,13 +433,22 @@ class DatabaseOperations:
     async def update_event(event_id: str, update_data: dict) -> dict:
         """Update an event"""
         update_data['updatedAt'] = datetime.utcnow()
-        update_data = {k: v for k, v in update_data.items() if v is not None}
-        
+
+        # CRITICAL FIX: Don't filter out None values for image fields
+        filtered_data = {}
+        for k, v in update_data.items():
+            # Always include image and image_public_id, even if None
+            if k in ['image', 'image_public_id']:
+                filtered_data[k] = v
+            # Filter other fields
+            elif v is not None:
+                filtered_data[k] = v
+
         result = await events_collection.update_one(
             {'id': event_id},
-            {'$set': update_data}
+            {'$set': filtered_data}
         )
-        
+
         if result.modified_count:
             return await DatabaseOperations.get_event_by_id(event_id)
         return None

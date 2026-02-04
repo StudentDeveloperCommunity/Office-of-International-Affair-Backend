@@ -203,6 +203,7 @@ class PartnershipBase(BaseModel):
     partnerName: str = Field(..., min_length=1, max_length=300)
     type: PartnershipType
     country: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(..., max_length=100)
     details: str = Field(..., min_length=10, max_length=2000)
     status: PartnershipStatus = Field(default=PartnershipStatus.ACTIVE)
     signedDate: Optional[datetime] = None
