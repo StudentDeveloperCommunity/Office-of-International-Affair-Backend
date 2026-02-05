@@ -167,6 +167,7 @@ class NewsBase(BaseModel):
     category: NewsCategory
     date: datetime = Field(default_factory=datetime.utcnow)
     image: Optional[str] = None
+    image_public_id: Optional[str] = None  # Cloudinary public_id for deletion
     file: Optional[str] = None  # PDF document link
     author: Optional[str] = Field(None, max_length=100)
     tags: Optional[List[str]] = Field(default_factory=list)
@@ -202,12 +203,14 @@ class PartnershipBase(BaseModel):
     partnerName: str = Field(..., min_length=1, max_length=300)
     type: PartnershipType
     country: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(..., max_length=100)
     details: str = Field(..., min_length=10, max_length=2000)
     status: PartnershipStatus = Field(default=PartnershipStatus.ACTIVE)
     signedDate: Optional[datetime] = None
     expiryDate: Optional[datetime] = None
     document: Optional[str] = None  # MoU document
     logo: Optional[str] = None
+    logo_public_id: Optional[str] = None  # Cloudinary public_id for deletion
     website: Optional[str] = None
     contactPerson: Optional[str] = Field(None, max_length=200)
     contactEmail: Optional[str] = Field(None, max_length=200)
@@ -258,11 +261,12 @@ class TeamMemberBase(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     department: Optional[str] = Field(None, max_length=200)
     office: Optional[str] = Field(None, max_length=200)
-    image: Optional[str] = Field(None, max_length=500)
+    image: Optional[str] = Field(None, max_length=500)  # Cloudinary URL
+    image_public_id: Optional[str] = Field(None, max_length=500)  # Cloudinary public_id for deletion
     responsibilities: Optional[List[str]] = Field(default_factory=list)
     order: int = Field(default=0)  # For sorting display order
-    is_active: bool = Field(default=True)  # Add is_active field
-    is_leadership: bool = Field(default=False)  # Add is_leadership field
+    is_active: bool = Field(default=True)
+    is_leadership: bool = Field(default=False)
 
 
 class TeamMemberCreate(TeamMemberBase):
@@ -275,13 +279,14 @@ class TeamMemberUpdate(BaseModel):
     bio: Optional[str] = Field(None, min_length=10, max_length=5000)
     department: Optional[str] = Field(None, min_length=1, max_length=200)
     image: Optional[str] = None
+    image_public_id: Optional[str] = None  # Cloudinary public_id
     email: Optional[EmailStr] = None
     phone: Optional[str] = Field(None, max_length=20)
     office: Optional[str] = Field(None, max_length=100)
     responsibilities: Optional[List[str]] = None
     order: Optional[int] = None
-    is_active: Optional[bool] = None  # Add is_active field for updates
-    is_leadership: Optional[bool] = None  # Add is_leadership field for updates
+    is_active: Optional[bool] = None
+    is_leadership: Optional[bool] = None
     
 
 class TeamMember(TeamMemberBase):
@@ -306,6 +311,8 @@ class EventBase(BaseModel):
     organizer: Optional[str] = Field(None, max_length=200)
     participants: Optional[List[str]] = Field(default_factory=list)
     images: Optional[List[str]] = Field(default_factory=list)
+    image: Optional[str] = None
+    image_public_id: Optional[str] = None  # Cloudinary public_id for deletion
     featured: bool = Field(default=False)
     registrationLink: Optional[str] = None
 
@@ -346,7 +353,8 @@ class Event(EventBase):
 class GalleryImageBase(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
     description: str = Field("", max_length=1000)
-    image: str = Field(..., min_length=1)  # URL to the image
+    image: str = Field(..., min_length=1)  # Cloudinary URL
+    image_public_id: Optional[str] = Field(None, max_length=500)  # Cloudinary public_id for deletion
     alt: Optional[str] = Field(None, max_length=200)
     category: str = Field(..., min_length=1)
     order: int = Field(default=0, ge=0)
@@ -361,6 +369,7 @@ class GalleryImageUpdate(BaseModel):
     title: Optional[str] = Field(None, min_length=1, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     image: Optional[str] = None
+    image_public_id: Optional[str] = None  # Cloudinary public_id
     alt: Optional[str] = Field(None, max_length=200)
     category: Optional[str] = Field(None, min_length=1)
     order: Optional[int] = Field(None, ge=0)
