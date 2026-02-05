@@ -88,14 +88,14 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
 # Active admin sessions
 active_admin_sessions = set()
 
-@router.get("/admin/debug/cloudinary")
+@router.get("/admin/dev-tool/debug/cloudinary-status")
 async def debug_cloudinary():
     """DEBUG ONLY - Check Cloudinary configuration"""
     return {
         "cloud_name_set": bool(os.getenv('CLOUDINARY_CLOUD_NAME')),
         "api_key_set": bool(os.getenv('CLOUDINARY_API_KEY')),
         "api_secret_set": bool(os.getenv('CLOUDINARY_API_SECRET')),
-        "configured_cloud_name": cloudinary.config().cloud_name,
+        "configured_cloud_name": cloudinary.config().cloud_name[:4] + "..." if cloudinary.config().cloud_name else None,
         "configured_api_key": cloudinary.config().api_key[:4] + "..." if cloudinary.config().api_key else None
     }
 
