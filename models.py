@@ -488,6 +488,57 @@ class StatsConfigUpdate(BaseModel):
     studentsExchanged: Optional[int] = Field(None, ge=0)
 
 # ========================
+# INTERNATIONAL ADMISSIONS FEES & SCHOLARSHIPS MODELS
+# ========================
+
+class FeeStructureItem(BaseModel):
+    program: str = Field(..., min_length=1, max_length=200)
+    annualFee: str = Field(..., min_length=1, max_length=100)
+    totalFee: str = Field(..., min_length=1, max_length=100)
+
+
+class ScholarshipItem(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    coverage: str = Field(..., min_length=1, max_length=100)
+    criteria: str = Field(..., min_length=1, max_length=500)
+
+
+class InternationalFeesScholarshipsBase(BaseModel):
+    fees: List[FeeStructureItem] = Field(default_factory=list)
+    scholarships: List[ScholarshipItem] = Field(default_factory=list)
+    ctaTitle: str = Field(default='Financial Aid Available', min_length=1, max_length=200)
+    ctaDescription: str = Field(
+        default='We offer various financial aid options to make quality education accessible. Contact our admissions office to learn more about scholarship applications.',
+        min_length=1,
+        max_length=1000,
+    )
+    ctaButtonLabel: str = Field(default='Contact Admissions', min_length=1, max_length=100)
+    ctaButtonLink: str = Field(default='/contact', min_length=1, max_length=300)
+
+
+class InternationalFeesScholarshipsCreate(InternationalFeesScholarshipsBase):
+    pass
+
+
+class InternationalFeesScholarshipsUpdate(BaseModel):
+    fees: Optional[List[FeeStructureItem]] = None
+    scholarships: Optional[List[ScholarshipItem]] = None
+    ctaTitle: Optional[str] = Field(None, min_length=1, max_length=200)
+    ctaDescription: Optional[str] = Field(None, min_length=1, max_length=1000)
+    ctaButtonLabel: Optional[str] = Field(None, min_length=1, max_length=100)
+    ctaButtonLink: Optional[str] = Field(None, min_length=1, max_length=300)
+
+
+class InternationalFeesScholarships(InternationalFeesScholarshipsBase):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    key: str = Field(default='international_admissions_fees_scholarships')
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    updatedAt: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        from_attributes = True
+
+# ========================
 # STATIC CONTENT MODELS (v2.0 NEW)
 # For admin-editable static content
 # ========================

@@ -26,6 +26,9 @@ from models import (
     GalleryImage, GalleryImageCreate, GalleryImageUpdate,
     FAQ, FAQCreate, FAQUpdate,
     StaticContent, StaticContentCreate, StaticContentUpdate,
+    InternationalFeesScholarships,
+    InternationalFeesScholarshipsCreate,
+    InternationalFeesScholarshipsUpdate,
     ExtendedStats, PaginatedResponse, SearchResult,
     StatsConfig, StatsConfigUpdate,
     SuccessResponse, ErrorResponse
@@ -365,6 +368,17 @@ async def get_static_content_by_key(key: str):
         raise
     except Exception as e:
         logger.error(f"Error fetching static content: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/international-admissions/fees-scholarships", response_model=InternationalFeesScholarships)
+async def get_international_fees_scholarships():
+    """Get international admissions fees and scholarships content"""
+    try:
+        content = await DatabaseOperations.get_international_fees_scholarships()
+        return content
+    except Exception as e:
+        logger.error(f"Error fetching international admissions fees/scholarships: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # ========================
@@ -1518,6 +1532,41 @@ async def delete_static_content_admin(key: str, current_username: str = Depends(
     except Exception as e:
         logger.error(f"Error deleting content: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete content")
+
+
+@router.post("/admin/international-admissions/fees-scholarships", response_model=InternationalFeesScholarships)
+async def create_international_fees_scholarships_admin(
+    payload: InternationalFeesScholarshipsCreate,
+    current_username: str = Depends(verify_token)
+):
+    """Create international admissions fees and scholarships content - Admin only"""
+    try:
+        existing = await DatabaseOperations.get_international_fees_scholarships()
+        if existing:
+            update_data = payload.dict()
+            updated = await DatabaseOperations.update_international_fees_scholarships(update_data)
+            return updated
+
+        created = await DatabaseOperations.create_international_fees_scholarships(payload.dict())
+        return created
+    except Exception as e:
+        logger.error(f"Error creating international admissions fees/scholarships: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create fees/scholarships content")
+
+
+@router.put("/admin/international-admissions/fees-scholarships", response_model=InternationalFeesScholarships)
+async def update_international_fees_scholarships_admin(
+    payload: InternationalFeesScholarshipsUpdate,
+    current_username: str = Depends(verify_token)
+):
+    """Update international admissions fees and scholarships content - Admin only"""
+    try:
+        update_data = {k: v for k, v in payload.dict().items() if v is not None}
+        updated = await DatabaseOperations.update_international_fees_scholarships(update_data)
+        return updated
+    except Exception as e:
+        logger.error(f"Error updating international admissions fees/scholarships: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update fees/scholarships content")
 
 # ========================
 # ADMIN CONTACTS ROUTES (v1 - Retained, Extended)
