@@ -28,7 +28,8 @@ from models import (
     StaticContent, StaticContentCreate, StaticContentUpdate,
     ExtendedStats, PaginatedResponse, SearchResult,
     StatsConfig, StatsConfigUpdate,
-    SuccessResponse, ErrorResponse
+    SuccessResponse, ErrorResponse,
+    Grant, GrantCreate, GrantUpdate
 )
 from database import DatabaseOperations
 
@@ -153,6 +154,30 @@ async def get_program_detail(program_id: str):
         logger.error(f"Error fetching program: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+# ========================
+# GRANTS ROUTES (v2.0 NEW)
+# ========================
+
+@router.get("/grants", response_model=PaginatedResponse)
+async def get_grants(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100)
+):
+    """Get grants with filtering and pagination"""
+    try:
+        result = await DatabaseOperations.get_grants(
+            category=category,
+            status=status,
+            page=page,
+            page_size=page_size
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching grants: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
 # ========================
 # NEWS ROUTES (v2.0 NEW)
 # ========================
@@ -1570,3 +1595,91 @@ async def delete_contact_admin(contact_id: str, current_username: str = Depends(
     except Exception as e:
         logger.error(f"Error deleting contact: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete contact")
+    
+    # ========================
+# ADMIN GRANTS ROUTES
+# ========================
+@router.get("/admin/grants")
+async def get_grants_admin(
+    current_username: str = Depends(verify_token),
+    page: int = 1,
+    page_size: int = 50
+):
+    """Get all grants - Admin only"""
+    try:
+        return await DatabaseOperations.get_grants(
+            page=page,
+            page_size=page_size
+        )
+    except Exception as e:
+        logger.error(f"Error fetching grants: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch grants")
+    
+@router.get("/admin/grants/{grant_id}", response_model=Grant)
+async def get_grant_by_id_admin(
+    grant_id: str,
+    current_username: str = Depends(verify_token)
+):
+    """Get a single grant by ID - Admin only"""
+    try:
+        grant = await DatabaseOperations.get_grant_by_id(grant_id)
+
+        if not grant:
+            raise HTTPException(status_code=404, detail="Grant not found")
+
+        return grant
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        logger.error(f"Error fetching grant: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to fetch grant"
+        )
+
+@router.post("/admin/grants", response_model=Grant)
+async def create_grant_admin(
+    grant: GrantCreate,
+    current_username: str = Depends(verify_token)
+):
+    try:
+        created = await DatabaseOperations.create_grant(grant.dict())
+        return created
+    except Exception as e:
+        logger.error(f"Error creating grant: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create grant")
+
+
+@router.put("/admin/grants/{grant_id}", response_model=Grant)
+async def update_grant_admin(
+    grant_id: str,
+    grant: GrantUpdate,
+    current_username: str = Depends(verify_token)
+):
+    try:
+        update_data = grant.dict(exclude_unset=True)
+        updated = await DatabaseOperations.update_grant(grant_id, update_data)
+        if not updated:
+            raise HTTPException(status_code=404, detail="Grant not found")
+        return updated
+    except Exception as e:
+        logger.error(f"Error updating grant: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update grant")
+
+
+@router.delete("/admin/grants/{grant_id}")
+async def delete_grant_admin(
+    grant_id: str,
+    current_username: str = Depends(verify_token)
+):
+    try:
+        deleted = await DatabaseOperations.delete_grant(grant_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Grant not found")
+        return SuccessResponse(message="Grant deleted successfully")
+    except Exception as e:
+        logger.error(f"Error deleting grant: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete grant")
+    
