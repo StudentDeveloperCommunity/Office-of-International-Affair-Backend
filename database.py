@@ -45,9 +45,98 @@ gallery_collection = db.gallery
 faqs_collection = db.faqs
 static_content_collection = db.static_content
 stats_config_collection = db.stats_config
+international_fees_scholarships_collection = db.international_fees_scholarships
 
 class DatabaseOperations:
     """Database operations for the OIA Website System"""
+
+    @staticmethod
+    def _default_international_fees_scholarships() -> dict:
+        return {
+            'key': 'international_admissions_fees_scholarships',
+            'fees': [
+                {'program': 'B.Tech', 'annualFee': '$4,000', 'totalFee': '$16,000'},
+                {'program': 'M.Tech', 'annualFee': '$5,000', 'totalFee': '$10,000'},
+                {'program': 'BBA', 'annualFee': '$3,500', 'totalFee': '$10,500'},
+                {'program': 'MBA', 'annualFee': '$6,000', 'totalFee': '$12,000'},
+                {'program': 'B.Pharm', 'annualFee': '$4,500', 'totalFee': '$18,000'},
+                {'program': 'M.Pharm', 'annualFee': '$5,500', 'totalFee': '$11,000'},
+            ],
+            'scholarships': [
+                {
+                    'name': 'Merit Scholarship',
+                    'coverage': '25-50%',
+                    'criteria': 'CGPA ≥ 8.5, Outstanding academic record',
+                },
+                {
+                    'name': 'International Student Scholarship',
+                    'coverage': '30%',
+                    'criteria': 'All international students, First year',
+                },
+                {
+                    'name': 'Country-Specific Scholarship',
+                    'coverage': 'Varies',
+                    'criteria': 'Based on country of origin',
+                },
+                {
+                    'name': 'Research Excellence Scholarship',
+                    'coverage': '50%',
+                    'criteria': 'For research-oriented programs, Strong research background',
+                },
+            ],
+            'ctaTitle': 'Financial Aid Available',
+            'ctaDescription': 'We offer various financial aid options to make quality education accessible. Contact our admissions office to learn more about scholarship applications.',
+            'ctaButtonLabel': 'Contact Admissions',
+            'ctaButtonLink': '/contact',
+        }
+
+    @staticmethod
+    async def create_international_fees_scholarships(data: dict) -> dict:
+        """Create international admissions fees and scholarships content"""
+        data['id'] = str(uuid.uuid4())
+        data['key'] = 'international_admissions_fees_scholarships'
+        data['createdAt'] = datetime.utcnow()
+        data['updatedAt'] = datetime.utcnow()
+
+        result = await international_fees_scholarships_collection.insert_one(data)
+        data['_id'] = str(result.inserted_id)
+        return data
+
+    @staticmethod
+    async def get_international_fees_scholarships() -> dict:
+        """Get international admissions fees and scholarships content"""
+        content = await international_fees_scholarships_collection.find_one(
+            {'key': 'international_admissions_fees_scholarships'}
+        )
+
+        if not content:
+            default_data = DatabaseOperations._default_international_fees_scholarships()
+            return await DatabaseOperations.create_international_fees_scholarships(default_data)
+
+        content['_id'] = str(content['_id'])
+        return content
+
+    @staticmethod
+    async def update_international_fees_scholarships(update_data: dict) -> dict:
+        """Update international admissions fees and scholarships content"""
+        update_data = {k: v for k, v in update_data.items() if v is not None}
+        update_data['updatedAt'] = datetime.utcnow()
+
+        existing = await international_fees_scholarships_collection.find_one(
+            {'key': 'international_admissions_fees_scholarships'}
+        )
+
+        if not existing:
+            create_data = DatabaseOperations._default_international_fees_scholarships()
+            create_data.update(update_data)
+            return await DatabaseOperations.create_international_fees_scholarships(create_data)
+
+        await international_fees_scholarships_collection.update_one(
+            {'key': 'international_admissions_fees_scholarships'},
+            {'$set': update_data}
+        )
+
+        return await DatabaseOperations.get_international_fees_scholarships()
 
     @staticmethod
     async def get_stats_config() -> dict:
