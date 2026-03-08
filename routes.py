@@ -12,10 +12,12 @@ from pathlib import Path
 import aiofiles
 import cloudinary
 import cloudinary.uploader
+from fastapi import Request
+
 
 from models import (
     # v1 Models
-    Program, ProgramCreate, ProgramUpdate,
+    GrantUpdate, Program, ProgramCreate, ProgramUpdate,
     Contact, ContactCreate,
     AdminLogin, Stats,
     # v2.0 Models
@@ -31,7 +33,8 @@ from models import (
     InternationalFeesScholarshipsUpdate,
     ExtendedStats, PaginatedResponse, SearchResult,
     StatsConfig, StatsConfigUpdate,
-    SuccessResponse, ErrorResponse
+    SuccessResponse, ErrorResponse,
+    Grant, GrantCreate, GrantUpdate
 )
 from database import DatabaseOperations
 
@@ -145,6 +148,29 @@ async def get_program_detail(program_id: str):
         logger.error(f"Error fetching program: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+# ========================
+# GRANTS ROUTES (v2.0 NEW)
+# ========================
+
+@router.get("/grants", response_model=PaginatedResponse)
+async def get_grants(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100)
+):
+    """Get grants with filtering and pagination"""
+    try:
+        result = await DatabaseOperations.get_grants(
+            category=category,
+            status=status,
+            page=page,
+            page_size=page_size
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error fetching grants: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 # ========================
 # NEWS ROUTES (v2.0 NEW)
 # ========================
@@ -1262,6 +1288,90 @@ async def delete_event_admin(event_id: str, current_username: str = Depends(veri
         logger.error(f"Error deleting event: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete event")
 
+# ========================
+# ADMIN GRANTS ROUTES
+# ========================
+@router.get("/admin/grants", response_model=PaginatedResponse)
+async def get_admin_grants(
+    category: Optional[str] = None,
+    status: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(100, ge=1),
+    current_username: str = Depends(verify_token)
+):
+    try:
+        result = await DatabaseOperations.get_grants(
+            category=category,
+            status=status,
+            page=page,
+            page_size=page_size
+        )
+        return result
+
+    except Exception as e:
+        logger.error(f"Error fetching grants: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch grants")
+# CREATE grant
+@router.post("/admin/grants", response_model=Grant)
+async def create_grant_admin(
+    grant: GrantCreate,
+    current_username: str = Depends(verify_token)
+):
+    try:
+        created_grant = await DatabaseOperations.create_grant(grant.dict())
+
+        if not created_grant:
+            raise HTTPException(status_code=400, detail="Failed to create grant")
+
+        return created_grant
+
+    except Exception as e:
+        logger.error(f"Error creating grant: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# GET single grant (used when opening edit form)
+@router.get("/admin/grants/{grant_id}", response_model=Grant)
+async def get_grant_admin(
+    grant_id: str,
+    current_username: str = Depends(verify_token)
+):
+    grant = await DatabaseOperations.get_grant_by_id(grant_id)
+
+    if not grant:
+        raise HTTPException(status_code=404, detail="Grant not found")
+
+    return grant
+
+
+# UPDATE grant
+@router.put("/admin/grants/{grant_id}", response_model=Grant)
+async def update_grant_admin(
+    grant_id: str,
+    grant: GrantUpdate,
+    current_username: str = Depends(verify_token)
+):
+    updated = await DatabaseOperations.update_grant(grant_id, grant.dict())
+
+    if not updated:
+        raise HTTPException(status_code=404, detail="Grant not found")
+
+    return updated
+
+
+# DELETE grant
+@router.delete("/admin/grants/{grant_id}")
+async def delete_grant_admin(
+    grant_id: str,
+    current_username: str = Depends(verify_token)
+):
+    deleted = await DatabaseOperations.delete_grant(grant_id)
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Grant not found")
+
+    return {"message": "Grant deleted successfully"}
+
 # ===============================
 # ADMIN GALLERY ROUTES (v2.0 NEW)
 # ===============================
@@ -1608,3 +1718,4 @@ async def delete_contact_admin(contact_id: str, current_username: str = Depends(
     except Exception as e:
         logger.error(f"Error deleting contact: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete contact")
+
