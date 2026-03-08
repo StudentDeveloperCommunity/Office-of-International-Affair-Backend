@@ -41,6 +41,7 @@ news_collection = db.news
 partnerships_collection = db.partnerships
 team_collection = db.team
 events_collection = db.events
+grants_collection = db.grants
 gallery_collection = db.gallery
 faqs_collection = db.faqs
 static_content_collection = db.static_content
@@ -946,6 +947,87 @@ class DatabaseOperations:
         })
         
         return stats
+# ========================
+    # GRANTS OPERATIONS (Extended for v2.0)
+    # ========================
+    
+    @staticmethod
+    async def get_grants(category: str = None, status: str = None, page: int = 1, page_size: int = 50) -> dict:
+        """Get all grants with pagination"""
+
+        query = {}
+
+        if category:
+            query['category'] = category
+
+        if status:
+            query['status'] = status
+
+        total = await grants_collection.count_documents(query)
+        skip = (page - 1) * page_size
+
+        grants = await grants_collection.find(query)\
+            .sort('createdAt', -1)\
+            .skip(skip)\
+            .limit(page_size)\
+            .to_list(page_size)
+
+        for grant in grants:
+            grant['_id'] = str(grant['_id'])
+            grant['id'] = grant.get('id', grant['_id'])
+
+        return {
+            'items': grants,
+            'total': total,
+            'page': page,
+            'pageSize': page_size,
+            'totalPages': (total + page_size - 1) // page_size
+        }
+            
+
+
+    @staticmethod
+    async def get_grant_by_id(grant_id: str) -> dict:
+        """Get a specific grant by ID"""
+        grant = await grants_collection.find_one({'id': grant_id})
+
+        if grant:
+            grant['_id'] = str(grant['_id'])
+
+        return grant
+
+    @staticmethod
+    async def create_grant(grant_data: dict) -> dict:
+        """Create a new grant"""
+        grant_data['id'] = str(uuid.uuid4())
+        grant_data['createdAt'] = datetime.utcnow()
+        grant_data['updatedAt'] = datetime.utcnow()
+
+        result = await grants_collection.insert_one(grant_data)
+        grant_data['_id'] = str(result.inserted_id)
+
+        return grant_data
+
+    @staticmethod
+    async def update_grant(grant_id: str, grant_data: dict) -> dict:
+        """Update a grant"""
+        grant_data['updatedAt'] = datetime.utcnow()
+        grant_data = {k: v for k, v in grant_data.items() if v is not None}
+
+        await grants_collection.update_one(
+            {'id': grant_id},
+            {'$set': grant_data}
+        )
+
+        return await DatabaseOperations.get_grant_by_id(grant_id)
+
+    @staticmethod
+    async def delete_grant(grant_id: str) -> bool:
+        """Delete a grant"""
+        result = await grants_collection.delete_one({'id': grant_id})
+        return result.deleted_count > 0
+
+
 
 
 # ========================

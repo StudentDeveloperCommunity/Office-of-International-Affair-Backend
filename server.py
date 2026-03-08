@@ -1,20 +1,20 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
-from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from contextlib import asynccontextmanager
 import os
 import logging
 from pathlib import Path
+from fastapi.middleware.cors import CORSMiddleware
 
 # Import routes and database utilities.
 # Prefer package-style imports (when running from repo root) but fall back to local imports
 # so the server can be started from the `backend/` directory during local development.
 try:
     # When running from repo root (recommended): `python -m uvicorn backend.server:app`
-    from backend.routes import router as api_router
-    from backend.database import initialize_database
-except Exception:
+    from routes import router as api_router
+    from database import initialize_database
+except (ImportError, ModuleNotFoundError):
     # When running from inside backend/ (legacy instructions): `uvicorn server:app`
     from routes import router as api_router
     from database import initialize_database
@@ -78,22 +78,14 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
+# Add CORS middleware to allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=[
-        "https://io.medicaps.ac.in",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "*"  # Fallback for development
-    ],
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
-
 # Include routes
 app.include_router(api_router)
 

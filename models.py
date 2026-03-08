@@ -592,3 +592,30 @@ class SearchResult(BaseModel):
     description: str
     url: str
     relevance: float = Field(default=1.0)
+class Grant(BaseModel):
+    id: Optional[str]
+    name: str
+    amount: str
+    category: str
+    deadline: str
+    status: str
+    description: Optional[str] = None
+    createdAt: Optional[datetime] = None
+
+
+class GrantCreate(BaseModel):
+    name: str
+    amount: str
+    category: str
+    deadline: str
+    status: str
+    description: Optional[str] = None
+
+
+class GrantUpdate(BaseModel):
+    name: Optional[str] = None
+    amount: Optional[str] = None
+    category: Optional[str] = None
+    deadline: Optional[str] = None
+    status: Optional[str] = None
+    description: Optional[str] = None
