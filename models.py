@@ -619,3 +619,34 @@ class GrantUpdate(BaseModel):
     deadline: Optional[str] = None
     status: Optional[str] = None
     description: Optional[str] = None
+
+# ========================
+# FACULTY ABROAD OPPORTUNITY MODELS (NEW)
+# ========================
+
+class FacultyAbroadOpportunityType(str, Enum):
+    TEACHING = "Teaching"
+    RESEARCH = "Research"
+
+class FacultyAbroadOpportunity(BaseModel):
+    id: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=200)
+    location: str = Field(..., min_length=1, max_length=200)
+    duration: str = Field(..., min_length=1, max_length=100)
+    type: FacultyAbroadOpportunityType
+    createdAt: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class FacultyAbroadOpportunityCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    location: str = Field(..., min_length=1, max_length=200)
+    duration: str = Field(..., min_length=1, max_length=100)
+    type: FacultyAbroadOpportunityType
+
+class FacultyAbroadOpportunityUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    location: Optional[str] = Field(None, min_length=1, max_length=200)
+    duration: Optional[str] = Field(None, min_length=1, max_length=100)
+    type: Optional[FacultyAbroadOpportunityType] = None

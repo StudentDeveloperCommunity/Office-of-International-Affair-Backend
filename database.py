@@ -42,6 +42,7 @@ partnerships_collection = db.partnerships
 team_collection = db.team
 events_collection = db.events
 grants_collection = db.grants
+faculty_abroad_collection = db.faculty_abroad
 gallery_collection = db.gallery
 faqs_collection = db.faqs
 static_content_collection = db.static_content
@@ -1025,6 +1026,51 @@ class DatabaseOperations:
     async def delete_grant(grant_id: str) -> bool:
         """Delete a grant"""
         result = await grants_collection.delete_one({'id': grant_id})
+        return result.deleted_count > 0
+    
+    # ========================
+    # FACULTY ABROAD OPERATIONS (NEW)
+    # ========================
+
+    @staticmethod
+    async def create_faculty_abroad_opportunity(data: dict) -> dict:
+        """Create a faculty abroad opportunity"""
+        data['id'] = str(uuid.uuid4())
+        data['createdAt'] = datetime.utcnow()
+        result = await faculty_abroad_collection.insert_one(data)
+        data['_id'] = str(result.inserted_id)
+        return data
+
+    @staticmethod
+    async def get_faculty_abroad_opportunities() -> list:
+        """Get all faculty abroad opportunities"""
+        items = await faculty_abroad_collection.find().sort('createdAt', -1).to_list(100)
+        for item in items:
+            item['_id'] = str(item['_id'])
+        return items
+
+    @staticmethod
+    async def get_faculty_abroad_opportunity_by_id(opp_id: str) -> dict:
+        """Get a specific faculty abroad opportunity"""
+        item = await faculty_abroad_collection.find_one({'id': opp_id})
+        if item:
+            item['_id'] = str(item['_id'])
+        return item
+
+    @staticmethod
+    async def update_faculty_abroad_opportunity(opp_id: str, update_data: dict) -> dict:
+        """Update a faculty abroad opportunity"""
+        update_data = {k: v for k, v in update_data.items() if v is not None}
+        await faculty_abroad_collection.update_one(
+            {'id': opp_id},
+            {'$set': update_data}
+        )
+        return await DatabaseOperations.get_faculty_abroad_opportunity_by_id(opp_id)
+
+    @staticmethod
+    async def delete_faculty_abroad_opportunity(opp_id: str) -> bool:
+        """Delete a faculty abroad opportunity"""
+        result = await faculty_abroad_collection.delete_one({'id': opp_id})
         return result.deleted_count > 0
 
 
