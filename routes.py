@@ -34,7 +34,8 @@ from models import (
     ExtendedStats, PaginatedResponse, SearchResult,
     StatsConfig, StatsConfigUpdate,
     SuccessResponse, ErrorResponse,
-    Grant, GrantCreate, GrantUpdate
+    Grant, GrantCreate, GrantUpdate,
+    FacultyAbroadOpportunity, FacultyAbroadOpportunityCreate, FacultyAbroadOpportunityUpdate
 )
 from database import DatabaseOperations
 
@@ -170,6 +171,20 @@ async def get_grants(
         return result
     except Exception as e:
         logger.error(f"Error fetching grants: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+# ========================
+# FACULTY ABROAD OPPORTUNITY ROUTES (NEW)
+# ========================
+
+@router.get("/faculty-abroad-opportunities", response_model=List[FacultyAbroadOpportunity])
+async def get_faculty_abroad_opportunities():
+    """Get all faculty abroad opportunities - Public"""
+    try:
+        items = await DatabaseOperations.get_faculty_abroad_opportunities()
+        return items
+    except Exception as e:
+        logger.error(f"Error fetching faculty abroad opportunities: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
 # ========================
 # NEWS ROUTES (v2.0 NEW)
@@ -1718,4 +1733,64 @@ async def delete_contact_admin(contact_id: str, current_username: str = Depends(
     except Exception as e:
         logger.error(f"Error deleting contact: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete contact")
+    
+# ========================
+# ADMIN FACULTY ABROAD ROUTES (NEW)
+# ========================
+
+@router.get("/admin/faculty-abroad-opportunities", response_model=List[FacultyAbroadOpportunity])
+async def get_faculty_abroad_admin(current_username: str = Depends(verify_token)):
+    """Get all faculty abroad opportunities - Admin only"""
+    try:
+        return await DatabaseOperations.get_faculty_abroad_opportunities()
+    except Exception as e:
+        logger.error(f"Error fetching opportunities: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@router.post("/admin/faculty-abroad-opportunities", response_model=FacultyAbroadOpportunity)
+async def create_faculty_abroad_admin(
+    opportunity: FacultyAbroadOpportunityCreate,
+    current_username: str = Depends(verify_token)
+):
+    """Create faculty abroad opportunity - Admin only"""
+    try:
+        return await DatabaseOperations.create_faculty_abroad_opportunity(opportunity.dict())
+    except Exception as e:
+        logger.error(f"Error creating opportunity: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create opportunity")
+
+@router.put("/admin/faculty-abroad-opportunities/{opp_id}", response_model=FacultyAbroadOpportunity)
+async def update_faculty_abroad_admin(
+    opp_id: str,
+    opportunity: FacultyAbroadOpportunityUpdate,
+    current_username: str = Depends(verify_token)
+):
+    """Update faculty abroad opportunity - Admin only"""
+    try:
+        updated = await DatabaseOperations.update_faculty_abroad_opportunity(opp_id, opportunity.dict())
+        if not updated:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        return updated
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating opportunity: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update opportunity")
+
+@router.delete("/admin/faculty-abroad-opportunities/{opp_id}")
+async def delete_faculty_abroad_admin(
+    opp_id: str,
+    current_username: str = Depends(verify_token)
+):
+    """Delete faculty abroad opportunity - Admin only"""
+    try:
+        deleted = await DatabaseOperations.delete_faculty_abroad_opportunity(opp_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="Opportunity not found")
+        return SuccessResponse(message="Opportunity deleted successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting opportunity: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete opportunity")
 
