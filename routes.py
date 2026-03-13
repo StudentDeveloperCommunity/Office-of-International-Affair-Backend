@@ -1394,8 +1394,8 @@ async def delete_grant_admin(
 @router.post("/admin/gallery", response_model=GalleryImage)
 async def upload_gallery_image_admin(
     file: UploadFile = File(...),
-    title: str = Form(...),
-    description: str = Form(""),
+    title: str = Form(None),
+    description: str = Form(None),
     category: str = Form(...),
     order: int = Form(0),
     is_featured: bool = Form(False),
@@ -1451,13 +1451,16 @@ async def upload_gallery_image_admin(
                     detail=f"Cloudinary upload failed: {error_msg}"
                 )
 
+        clean_description = description.strip() if description else ""
+        clean_title = title.strip() if title else ""
+
         # Prepare image data for database
         image_data = {
-            "title": title,
-            "description": description,
+            "title": clean_title,
+            "description": clean_description,
             "image": upload_result["secure_url"],
             "image_public_id": upload_result["public_id"],
-            "alt": title,
+            "alt": clean_title,
             "category": category,
             "order": order,
             "is_featured": is_featured,
@@ -1549,12 +1552,14 @@ async def update_gallery_image_admin(
 
             update_data['image'] = upload_result["secure_url"]
             update_data['image_public_id'] = upload_result["public_id"]
-            update_data['alt'] = title or existing.get('alt') or existing.get('title')
+            update_data['alt'] = title.strip() if title else existing.get('title', '')
 
         if title is not None:
-            update_data['title'] = title
+            update_data['title'] = title.strip()
         if description is not None:
-            update_data['description'] = description
+            if not description.strip():
+                raise HTTPException(status_code=400, detail="Description is required")
+            update_data['description'] = description.strip()
         if category is not None:
             update_data['category'] = category
         if order is not None:
