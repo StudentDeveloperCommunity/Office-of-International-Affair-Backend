@@ -351,8 +351,8 @@ class Event(EventBase):
 # ========================
 
 class GalleryImageBase(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
-    description: str = Field("", max_length=1000)
+    title: Optional[str] = Field(None, max_length=200)
+    description: Optional[str] = Field(None, max_length=1000)
     image: str = Field(..., min_length=1)  # Cloudinary URL
     image_public_id: Optional[str] = Field(None, max_length=500)  # Cloudinary public_id for deletion
     alt: Optional[str] = Field(None, max_length=200)
