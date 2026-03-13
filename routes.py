@@ -1557,8 +1557,6 @@ async def update_gallery_image_admin(
         if title is not None:
             update_data['title'] = title.strip()
         if description is not None:
-            if not description.strip():
-                raise HTTPException(status_code=400, detail="Description is required")
             update_data['description'] = description.strip()
         if category is not None:
             update_data['category'] = category
