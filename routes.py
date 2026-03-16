@@ -1554,10 +1554,9 @@ async def update_gallery_image_admin(
             update_data['image_public_id'] = upload_result["public_id"]
             update_data['alt'] = title.strip() if title else existing.get('title', '')
 
-        if title is not None:
-            update_data['title'] = title.strip()
-        if description is not None:
-            update_data['description'] = description.strip()
+        # Always write title and description, even when empty
+        update_data['title'] = title.strip() if title is not None else ''
+        update_data['description'] = description.strip() if description is not None else ''
         if category is not None:
             update_data['category'] = category
         if order is not None:

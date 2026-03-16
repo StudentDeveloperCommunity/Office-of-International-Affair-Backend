@@ -366,7 +366,7 @@ class GalleryImageCreate(GalleryImageBase):
     pass
 
 class GalleryImageUpdate(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    title: Optional[str] = Field(None, max_length=200)
     description: Optional[str] = Field(None, max_length=1000)
     image: Optional[str] = None
     image_public_id: Optional[str] = None  # Cloudinary public_id
