@@ -650,3 +650,33 @@ class FacultyAbroadOpportunityUpdate(BaseModel):
     location: Optional[str] = Field(None, min_length=1, max_length=200)
     duration: Optional[str] = Field(None, min_length=1, max_length=100)
     type: Optional[FacultyAbroadOpportunityType] = None
+
+# ========================
+# Scholarship models for higher studies abroad opportunities
+# ========================
+class ScholarshipBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    country: str = Field(..., min_length=1, max_length=100)
+    amount: str = Field(..., min_length=1, max_length=100)
+    deadline: str = Field(..., min_length=1, max_length=100)
+    url: str = Field(..., min_length=1)
+    is_active: bool = Field(default=True)
+
+class ScholarshipCreate(ScholarshipBase):
+    pass
+
+class ScholarshipUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=200)
+    country: Optional[str] = Field(None, min_length=1, max_length=100)
+    amount: Optional[str] = Field(None, min_length=1, max_length=100)
+    deadline: Optional[str] = Field(None, min_length=1, max_length=100)
+    url: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class Scholarship(ScholarshipBase):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    createdAt: datetime = Field(default_factory=datetime.utcnow)
+    updatedAt: datetime = Field(default_factory=datetime.utcnow)
+
+    class Config:
+        from_attributes = True
