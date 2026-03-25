@@ -13,7 +13,7 @@ import aiofiles
 import cloudinary
 import cloudinary.uploader
 from fastapi import Request
-
+from pydantic import BaseModel
 
 from models import (
     # v1 Models
@@ -35,9 +35,18 @@ from models import (
     StatsConfig, StatsConfigUpdate,
     SuccessResponse, ErrorResponse,
     Grant, GrantCreate, GrantUpdate,
-    FacultyAbroadOpportunity, FacultyAbroadOpportunityCreate, FacultyAbroadOpportunityUpdate
+    FacultyAbroadOpportunity, FacultyAbroadOpportunityCreate, FacultyAbroadOpportunityUpdate,
+     ScholarshipCreate
 )
-from database import DatabaseOperations
+from database import DatabaseOperations, db
+from motor.motor_asyncio import AsyncIOMotorClient
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+# MongoDB connection for direct collection access
+_mongo_client = AsyncIOMotorClient(os.getenv("MONGO_URL"))
+_db = _mongo_client[os.getenv("DB_NAME", "medicapsoia")]
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -46,7 +55,7 @@ logger = logging.getLogger(__name__)
 # JWT Configuration
 SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'medicaps-exchange-programs-secret-key-2025')
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60
+ACCESS_TOKEN_EXPIRE_MINUTES = 1440
 
 # Security scheme
 security = HTTPBearer()
@@ -1796,3 +1805,88 @@ async def delete_faculty_abroad_admin(
         logger.error(f"Error deleting opportunity: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to delete opportunity")
 
+# ========================
+# SCHOLARSHIP ROUTES (MongoDB)
+# ========================
+
+# MongoDB connection for scholarships
+from motor.motor_asyncio import AsyncIOMotorClient as _AsyncIOMotorClient
+import os as _os
+
+_mongo_client = _AsyncIOMotorClient(_os.getenv("MONGO_URL"))
+_db = _mongo_client[_os.getenv("DB_NAME", "medicapsoia")]
+
+# GET all active scholarships (public)
+@router.get("/scholarships")
+async def get_scholarships():
+    try:
+        scholarships = []
+        async for s in _db["scholarships"].find({"is_active": True}):
+            s["id"] = str(s["_id"])
+            del s["_id"]
+            scholarships.append(s)
+        return scholarships
+    except Exception as e:
+        logger.error(f"Error fetching scholarships: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# GET all scholarships including inactive (admin)
+@router.get("/admin/scholarships")
+async def get_all_scholarships_admin(current_username: str = Depends(verify_token)):
+    try:
+        scholarships = []
+        async for s in _db["scholarships"].find():
+            s["id"] = str(s["_id"])
+            del s["_id"]
+            scholarships.append(s)
+        return scholarships
+    except Exception as e:
+        logger.error(f"Error fetching all scholarships: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# POST create scholarship (admin)
+@router.post("/admin/scholarships")
+async def create_scholarship_admin(data: ScholarshipCreate, current_username: str = Depends(verify_token)):
+    try:
+        scholarship_data = data.dict()
+        scholarship_data["createdAt"] = datetime.utcnow()
+        result = await _db["scholarships"].insert_one(scholarship_data)
+        scholarship_data["id"] = str(result.inserted_id)
+        scholarship_data.pop("_id", None)
+        return scholarship_data
+    except Exception as e:
+        logger.error(f"Error creating scholarship: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to create scholarship: {str(e)}")
+
+# PUT update scholarship (admin)
+@router.put("/admin/scholarships/{scholarship_id}")
+async def update_scholarship_admin(scholarship_id: str, data: ScholarshipCreate, current_username: str = Depends(verify_token)):
+    try:
+        from bson import ObjectId
+        result = await _db["scholarships"].update_one(
+            {"_id": ObjectId(scholarship_id)},
+            {"$set": data.dict()}
+        )
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Scholarship not found")
+        return {"id": scholarship_id, **data.dict()}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating scholarship: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update scholarship: {str(e)}")
+
+# DELETE scholarship (admin)
+@router.delete("/admin/scholarships/{scholarship_id}")
+async def delete_scholarship_admin(scholarship_id: str, current_username: str = Depends(verify_token)):
+    try:
+        from bson import ObjectId
+        result = await _db["scholarships"].delete_one({"_id": ObjectId(scholarship_id)})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Scholarship not found")
+        return {"message": "Scholarship deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting scholarship: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete scholarship: {str(e)}")

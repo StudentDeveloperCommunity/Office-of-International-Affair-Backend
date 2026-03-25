@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
 from contextlib import asynccontextmanager
 import os
+import sys
 import logging
 from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,15 +11,15 @@ from fastapi.middleware.cors import CORSMiddleware
 # Import routes and database utilities.
 # Prefer package-style imports (when running from repo root) but fall back to local imports
 # so the server can be started from the `backend/` directory during local development.
+
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 try:
-    # When running from repo root (recommended): `python -m uvicorn backend.server:app`
     from routes import router as api_router
     from database import initialize_database
 except (ImportError, ModuleNotFoundError):
-    # When running from inside backend/ (legacy instructions): `uvicorn server:app`
     from routes import router as api_router
     from database import initialize_database
-
 # Load environment variables
 ROOT_DIR = Path(__file__).parent
 # Only load .env locally. Render and other platforms provide env vars directly.
@@ -81,8 +82,13 @@ app = FastAPI(
 # Add CORS middleware to allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
